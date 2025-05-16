@@ -1,19 +1,231 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>SmartCash - Controle de Gastos</title>
-  <link rel="manifest" href="manifest.json" />
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('service-worker.js');
+  <style>
+    body {
+      margin: 0;
+      font-family: "Segoe UI", sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+      padding: 20px;
     }
-  </script>
+    h1 {
+      text-align: center;
+      font-size: 2.5em;
+      color: #38bdf8;
+    }
+    .container {
+      max-width: 800px;
+      margin: auto;
+      background: #1e293b;
+      padding: 20px;
+      border-radius: 12px;
+    }
+    input, button {
+      width: 100%;
+      padding: 12px;
+      margin-top: 10px;
+      border-radius: 8px;
+      border: none;
+      font-size: 1rem;
+    }
+    input {
+      background: #0f172a;
+      color: #f8fafc;
+    }
+    button {
+      background: #38bdf8;
+      color: #0f172a;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #0ea5e9;
+    }
+    .gasto-item {
+      background: #334155;
+      padding: 10px;
+      border-radius: 6px;
+      margin-top: 8px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .result {
+      background: #22c55e;
+      color: #0f172a;
+      border-radius: 10px;
+      padding: 20px;
+      font-weight: bold;
+      text-align: center;
+      margin-top: 30px;
+    }
+    canvas {
+      margin-top: 20px;
+      background: #1e293b;
+      border-radius: 8px;
+    }
+    #historicoCompleto {
+      margin-top: 40px;
+    }
+    #historicoCompleto .result {
+      background: #1f7c36;
+      margin-bottom: 20px;
+    }
+  </style>
 </head>
-<body style="background:#0f172a;color:#fff;font-family:sans-serif;text-align:center;padding-top:40px;">
-  <h1>SmartCash</h1>
-  <p>Seu app está funcionando offline com PWA via Netlify!</p>
+<body>
+  <div class="container" id="areaExportar">
+    <h1>SmartCash</h1>
+    <label>Mês:</label>
+    <input type="text" id="mes" placeholder="Ex: Maio/2025" />
+    <label>Entradas (R$):</label>
+    <input type="number" id="entrada" placeholder="Ex: 3000" />
+    <label>Gasto:</label>
+    <input type="text" id="nomeGasto" placeholder="Descrição" />
+    <input type="number" id="valorGasto" placeholder="Valor" />
+    <button onclick="adicionarGasto()">Adicionar Gasto</button>
+    <div id="listaGastos"></div>
+    <button onclick="calcular()">Calcular Totais</button>
+    <div id="resultadoFinal" class="result" style="display: none;"></div>
+    <canvas id="grafico" height="180"></canvas>
+    <h3>Comparação entre todos os meses</h3>
+    <canvas id="graficoComparativo" height="250"></canvas>
+    <div id="historicoCompleto"><h3>Histórico Completo</h3></div>
+    <button onclick="exportarComoImagem()">📷 Exportar como Imagem</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script>
+    let gastos = [];
+
+    function adicionarGasto() {
+      const nome = document.getElementById('nomeGasto').value;
+      const valor = parseFloat(document.getElementById('valorGasto').value);
+      if (!nome || isNaN(valor)) return;
+      gastos.push({ nome, valor });
+      atualizarLista();
+      document.getElementById('nomeGasto').value = '';
+      document.getElementById('valorGasto').value = '';
+    }
+
+    function atualizarLista() {
+      const lista = document.getElementById('listaGastos');
+      lista.innerHTML = '';
+      gastos.forEach((g, i) => {
+        lista.innerHTML += `<div class="gasto-item">${g.nome}: R$ ${g.valor.toFixed(2)} 
+          <button style="background:#ef4444;color:white;border:none;border-radius:4px;padding:2px 10px;" onclick="remover(${i})">X</button></div>`;
+      });
+    }
+
+    function remover(i) {
+      gastos.splice(i, 1);
+      atualizarLista();
+    }
+
+    function calcular() {
+      const entrada = parseFloat(document.getElementById('entrada').value);
+      const mes = document.getElementById('mes').value;
+      const totalGastos = gastos.reduce((acc, g) => acc + g.valor, 0);
+      const saldo = entrada - totalGastos;
+
+      document.getElementById('resultadoFinal').innerHTML =
+        `<strong>${mes}</strong><br>
+         Entradas: R$ ${entrada.toFixed(2)}<br>
+         Gastos: R$ ${totalGastos.toFixed(2)}<br>
+         <strong style="font-size:1.2em;">SALDO: R$ ${saldo.toFixed(2)}</strong>`;
+      document.getElementById('resultadoFinal').style.display = 'block';
+
+      gerarGrafico(entrada, totalGastos);
+      salvarHistorico(mes, entrada, totalGastos, saldo);
+      mostrarComparativoTodos();
+      mostrarHistoricoCompleto();
+    }
+
+    function gerarGrafico(entrada, gastos) {
+      const ctx = document.getElementById('grafico').getContext('2d');
+      if (window.grafico1) window.grafico1.destroy();
+      window.grafico1 = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['Entradas', 'Gastos'],
+          datasets: [{
+            data: [entrada, gastos],
+            backgroundColor: ['#22c55e', '#ef4444']
+          }]
+        },
+        options: { plugins: { legend: { display: false } }, responsive: true }
+      });
+    }
+
+    function salvarHistorico(mes, entrada, gastos, saldo) {
+      const hist = JSON.parse(localStorage.getItem('smartcashHistorico')) || [];
+      hist.push({ mes, entrada, gastos, saldo });
+      localStorage.setItem('smartcashHistorico', JSON.stringify(hist));
+    }
+
+    function mostrarComparativoTodos() {
+      const hist = JSON.parse(localStorage.getItem('smartcashHistorico')) || [];
+      const ctx = document.getElementById("graficoComparativo").getContext("2d");
+      if (window.grafico2) window.grafico2.destroy();
+
+      const labels = hist.map(h => h.mes);
+      const entradas = hist.map(h => h.entrada);
+      const gastos = hist.map(h => h.gastos);
+      const saldos = hist.map(h => h.saldo);
+
+      window.grafico2 = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            { label: 'Entradas', data: entradas, backgroundColor: '#22c55e' },
+            { label: 'Gastos', data: gastos, backgroundColor: '#ef4444' },
+            { label: 'Saldo', data: saldos, backgroundColor: '#10b981' }
+          ]
+        },
+        options: {
+          responsive: true,
+          scales: { y: { beginAtZero: true } },
+          plugins: { legend: { labels: { color: '#fff' } } }
+        }
+      });
+    }
+
+    function mostrarHistoricoCompleto() {
+      const historico = JSON.parse(localStorage.getItem("smartcashHistorico")) || [];
+      const container = document.getElementById("historicoCompleto");
+      container.innerHTML = "<h3>Histórico Completo</h3>";
+      historico.forEach(mes => {
+        const div = document.createElement("div");
+        div.className = "result";
+        div.innerHTML = `
+          <strong>${mes.mes}</strong><br/>
+          Entradas: R$ ${mes.entrada.toFixed(2)}<br/>
+          Gastos: R$ ${mes.gastos.toFixed(2)}<br/>
+          <strong>SALDO: R$ ${mes.saldo.toFixed(2)}</strong>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function exportarComoImagem() {
+      html2canvas(document.getElementById('areaExportar')).then(canvas => {
+        const link = document.createElement('a');
+        link.download = 'smartcash_resultado_completo.png';
+        link.href = canvas.toDataURL();
+        link.click();
+      });
+    }
+
+    // Carregar tudo ao abrir
+    window.onload = () => {
+      mostrarComparativoTodos();
+      mostrarHistoricoCompleto();
+    };
+  </script>
 </body>
 </html>
